@@ -223,6 +223,16 @@ def apply_tp(
             "feed_forward.w3": colwise_parallel(),
         }
 
+        # Add tensor parallel for residual embeddings if they exist
+        if (
+            hasattr(transformer_block, "residual_embedding")
+            and transformer_block.residual_embedding is not None
+        ):
+            layer_plan["residual_embedding"] = RowwiseParallel(
+                input_layouts=Replicate(),
+                output_layouts=Shard(1),
+            )
+
         parallelize_module(
             module=transformer_block,
             device_mesh=tp_mesh,
