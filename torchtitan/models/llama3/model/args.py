@@ -64,6 +64,10 @@ class TransformerModelArgs(BaseModelArgs):
                 "CP support for FlexAttention is still in progress."
             )
 
+        # Transfer multi-embedding configuration from job config
+        self.multi_embedding_enabled = job_config.model.multi_embedding_enabled
+        self.multi_embedding_interval = job_config.model.multi_embedding_interval
+
     def get_nparams_and_flops(
         self, model: nn.Module, seq_len: int
     ) -> tuple[int, float]:
