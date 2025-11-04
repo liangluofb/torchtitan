@@ -27,6 +27,16 @@ from torchtitan.protocols.train_spec import ModelProtocol
 from .args import RoPEScalingArgs, TransformerModelArgs
 
 
+class AddWithScales(nn.Module):
+    def __init__(self, shape, init=1e-3) -> None:
+        super().__init__()
+        self.ax = nn.Parameter(torch.full(shape, init))
+        self.ay = nn.Parameter(torch.full(shape, init))
+
+    def forward(self, x, y):
+        return x + y + self.ax * x + self.ay * y
+
+
 def precompute_freqs_cis(
     dim: int,
     end: int,
@@ -347,6 +357,7 @@ class TransformerBlock(nn.Module):
             self.residual_embedding = nn.Embedding(
                 model_args.vocab_size, model_args.dim
             )
+            self.residual_embedding_add = AddWithScales(shape=[model_args.dim])
         else:
             self.residual_embedding = None
 
@@ -377,7 +388,8 @@ class TransformerBlock(nn.Module):
         """
         # Add residual embedding if this layer has one
         if self.residual_embedding is not None and tokens is not None:
-            x = x + self.residual_embedding(tokens)
+            # assert 0, f"x.shape = {x.shape}, tokens.shape = {tokens.shape}"
+            x = self.residual_embedding_add(x, self.residual_embedding(tokens))
 
         h = x + self.attention(self.attention_norm(x), freqs_cis, attention_masks)
         out = h + self.feed_forward(self.ffn_norm(h))
@@ -522,7 +534,12 @@ class Transformer(nn.Module, ModelProtocol):
         original_tokens = tokens if self.model_args.multi_embedding_enabled else None
 
         for layer in self.layers.values():
-            h = layer(h, self.freqs_cis, attention_masks=attention_masks, tokens=original_tokens)
+            h = layer(
+                h,
+                self.freqs_cis,
+                attention_masks=attention_masks,
+                tokens=original_tokens,
+            )
 
         h = self.norm(h) if self.norm else h
         output = self.output(h) if self.output else h
