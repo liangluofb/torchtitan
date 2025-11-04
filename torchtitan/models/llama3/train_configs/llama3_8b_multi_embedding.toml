@@ -1,8 +1,9 @@
 # NOTE: this toml config is a preset for 64 A100 GPUs.
+# This config enables multi-embedding feature for comparison with standard llama3_8b
 
 [job]
-dump_folder = "./outputs"
-description = "Llama 3 8B training"
+dump_folder = "./outputs/llama3_8b_multi_embedding"
+description = "Llama 3 8B training with multi-embedding (interval=4)"
 
 [profiling]
 enable_profiling = true
@@ -20,6 +21,10 @@ flavor = "8B"
 hf_assets_path = "./assets/hf/Llama-3.1-8B"
 # converters = ["float8"]
 
+# Multi-embedding configuration
+multi_embedding_enabled = true
+multi_embedding_interval = 4  # Add residual embedding every 4 layers
+
 [optimizer]
 name = "AdamW"
 lr = 3e-4
@@ -29,7 +34,7 @@ eps = 1e-8
 warmup_steps = 2000  # lr scheduler warm up
 
 [training]
-local_batch_size = 1
+local_batch_size = 4
 seq_len = 8192
 max_norm = 1.0  # grad norm clipping
 steps = 10000

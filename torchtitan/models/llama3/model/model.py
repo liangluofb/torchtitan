@@ -319,6 +319,7 @@ class TransformerBlock(nn.Module):
         layer_id (int): Identifier for the layer.
         attention_norm (RMSNorm): Layer normalization for attention output.
         ffn_norm (RMSNorm): Layer normalization for feedforward output.
+        residual_embedding (nn.Embedding | None): Optional residual embedding for this layer.
 
     """
 
@@ -326,6 +327,7 @@ class TransformerBlock(nn.Module):
         super().__init__()
         self.n_heads = model_args.n_heads
         self.dim = model_args.dim
+        self.layer_id = layer_id
         self.attention = Attention(model_args)
         self.feed_forward = FeedForward(
             dim=model_args.dim,
@@ -335,6 +337,18 @@ class TransformerBlock(nn.Module):
         )
         self.attention_norm = nn.RMSNorm(model_args.dim, eps=model_args.norm_eps)
         self.ffn_norm = nn.RMSNorm(model_args.dim, eps=model_args.norm_eps)
+
+        # Add residual embedding if multi-embedding is enabled and this is a target layer
+        if (
+            model_args.multi_embedding_enabled
+            and layer_id > 0
+            and layer_id % model_args.multi_embedding_interval == 0
+        ):
+            self.residual_embedding = nn.Embedding(
+                model_args.vocab_size, model_args.dim
+            )
+        else:
+            self.residual_embedding = None
 
         if model_args.depth_init:
             self.weight_init_std = 0.02 / (2 * (layer_id + 1)) ** 0.5
@@ -346,6 +360,7 @@ class TransformerBlock(nn.Module):
         x: torch.Tensor,
         freqs_cis: torch.Tensor,
         attention_masks: AttentionMasksType | None,
+        tokens: torch.Tensor | None = None,
     ):
         """
         Perform a forward pass through the TransformerBlock.
@@ -353,11 +368,17 @@ class TransformerBlock(nn.Module):
         Args:
             x (torch.Tensor): Input tensor.
             freqs_cis (torch.Tensor): Precomputed cosine and sine frequencies.
+            attention_masks (AttentionMasksType | None): Attention masks.
+            tokens (torch.Tensor | None): Original token indices for residual embedding.
 
         Returns:
             torch.Tensor: Output tensor after applying attention and feedforward layers.
 
         """
+        # Add residual embedding if this layer has one
+        if self.residual_embedding is not None and tokens is not None:
+            x = x + self.residual_embedding(tokens)
+
         h = x + self.attention(self.attention_norm(x), freqs_cis, attention_masks)
         out = h + self.feed_forward(self.ffn_norm(h))
         return out
@@ -367,6 +388,8 @@ class TransformerBlock(nn.Module):
             norm.reset_parameters()
         self.attention.init_weights(self.weight_init_std)
         self.feed_forward.init_weights(self.weight_init_std)
+        if self.residual_embedding is not None:
+            nn.init.normal_(self.residual_embedding.weight)
 
 
 class Transformer(nn.Module, ModelProtocol):
@@ -495,8 +518,11 @@ class Transformer(nn.Module, ModelProtocol):
         # passthrough for nonexistent layers, allows easy configuration of pipeline parallel stages
         h = self.tok_embeddings(tokens) if self.tok_embeddings else tokens
 
+        # Store original tokens for residual embeddings
+        original_tokens = tokens if self.model_args.multi_embedding_enabled else None
+
         for layer in self.layers.values():
-            h = layer(h, self.freqs_cis, attention_masks=attention_masks)
+            h = layer(h, self.freqs_cis, attention_masks=attention_masks, tokens=original_tokens)
 
         h = self.norm(h) if self.norm else h
         output = self.output(h) if self.output else h

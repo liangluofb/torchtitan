@@ -47,6 +47,10 @@ class TransformerModelArgs(BaseModelArgs):
     attn_mask_type: str = "causal"
     eos_id: int = 0
 
+    # Multi-embedding configuration
+    multi_embedding_enabled: bool = False
+    multi_embedding_interval: int = 4  # Add residual embedding every K layers
+
     def update_from_config(self, job_config: JobConfig, **kwargs) -> None:
         seq_len = job_config.training.seq_len
         if seq_len > self.max_seq_len:

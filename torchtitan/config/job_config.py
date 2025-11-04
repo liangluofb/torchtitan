@@ -130,6 +130,12 @@ class Model:
     converters have been applied.
     """
 
+    multi_embedding_enabled: bool = False
+    """Whether to enable multiple residual embeddings throughout transformer layers"""
+
+    multi_embedding_interval: int = 4
+    """Interval (in layers) at which to add residual embeddings when multi_embedding_enabled is True"""
+
 
 @dataclass
 class Optimizer:
